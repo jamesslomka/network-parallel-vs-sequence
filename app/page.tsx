@@ -7,25 +7,26 @@ import type {
   TraceSpan,
 } from "./api/fetch-wines/route";
 import type { FetchWinesGotResponse } from "./api/fetch-wines-got/route";
+import type { FetchWinesNoCacheResponse } from "./api/fetch-wines-nocache/route";
 import type { NetworkTimings } from "./lib/cache";
 
-type HttpClient = "fetch" | "got";
+type HttpClient = "fetch" | "got" | "fetch-nocache";
 
 interface TestResult {
   id: string;
-  response: FetchWinesResponse | FetchWinesGotResponse;
+  response: FetchWinesResponse | FetchWinesGotResponse | FetchWinesNoCacheResponse;
   timestamp: Date;
   httpClient: HttpClient;
 }
 
 interface ComparisonResult {
-  parallel: FetchWinesResponse | FetchWinesGotResponse | null;
-  sequential: FetchWinesResponse | FetchWinesGotResponse | null;
+  parallel: FetchWinesResponse | FetchWinesGotResponse | FetchWinesNoCacheResponse | null;
+  sequential: FetchWinesResponse | FetchWinesGotResponse | FetchWinesNoCacheResponse | null;
 }
 
 // Type guard to check if response has network timings (got response)
 function hasNetworkTimings(
-  response: FetchWinesResponse | FetchWinesGotResponse
+  response: FetchWinesResponse | FetchWinesGotResponse | FetchWinesNoCacheResponse
 ): response is FetchWinesGotResponse {
   return "aggregatedTimings" in response;
 }
@@ -42,16 +43,16 @@ export default function Home() {
   const [mode, setMode] = useState<"parallel" | "sequential" | "compare">(
     "compare"
   );
-  const [httpClient, setHttpClient] = useState<HttpClient>("got");
+  const [httpClient, setHttpClient] = useState<HttpClient>("fetch");
   const [isLoading, setIsLoading] = useState(false);
   const [isWarmingCache, setIsWarmingCache] = useState(false);
   const [results, setResults] = useState<TestResult[]>([]);
   const [comparison, setComparison] = useState<ComparisonResult | null>(null);
   const [latestSingleResult, setLatestSingleResult] = useState<
-    FetchWinesResponse | FetchWinesGotResponse | null
+    FetchWinesResponse | FetchWinesGotResponse | FetchWinesNoCacheResponse | null
   >(null);
   const [currentHttpClient, setCurrentHttpClient] =
-    useState<HttpClient>("got");
+    useState<HttpClient>("fetch");
   const [error, setError] = useState<string | null>(null);
 
   const warmCache = useCallback(async () => {
@@ -76,9 +77,16 @@ export default function Home() {
   const runTest = useCallback(
     async (
       testMode: "parallel" | "sequential"
-    ): Promise<FetchWinesResponse | FetchWinesGotResponse> => {
-      const endpoint =
-        httpClient === "got" ? "/api/fetch-wines-got" : "/api/fetch-wines";
+    ): Promise<FetchWinesResponse | FetchWinesGotResponse | FetchWinesNoCacheResponse> => {
+      let endpoint: string;
+      if (httpClient === "got") {
+        endpoint = "/api/fetch-wines-got";
+      } else if (httpClient === "fetch-nocache") {
+        endpoint = "/api/fetch-wines-nocache";
+      } else {
+        endpoint = "/api/fetch-wines";
+      }
+
       const response = await fetch(endpoint, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
@@ -230,30 +238,37 @@ export default function Home() {
               </div>
             </div>
 
-            {/* HTTP Client Selection */}
+            {/* Strategy Selection */}
             <div className="space-y-2">
               <label className="block text-sm font-medium text-zinc-700 dark:text-zinc-300">
-                HTTP Client
+                Strategy
               </label>
               <div className="flex flex-wrap gap-2">
-                {(["got", "fetch"] as const).map((client) => (
-                  <button
-                    key={client}
-                    onClick={() => setHttpClient(client)}
-                    className={`px-4 py-2 rounded-lg text-sm font-medium transition-colors ${
-                      httpClient === client
-                        ? "bg-emerald-600 text-white"
-                        : "bg-zinc-100 dark:bg-zinc-800 text-zinc-700 dark:text-zinc-300 hover:bg-zinc-200 dark:hover:bg-zinc-700"
-                    }`}
-                  >
-                    {client}
-                  </button>
-                ))}
+                <button
+                  onClick={() => setHttpClient("fetch")}
+                  className={`px-4 py-2 rounded-lg text-sm font-medium transition-colors ${
+                    httpClient === "fetch"
+                      ? "bg-emerald-600 text-white"
+                      : "bg-zinc-100 dark:bg-zinc-800 text-zinc-700 dark:text-zinc-300 hover:bg-zinc-200 dark:hover:bg-zinc-700"
+                  }`}
+                >
+                  Unstable Cache
+                </button>
+                <button
+                  onClick={() => setHttpClient("fetch-nocache")}
+                  className={`px-4 py-2 rounded-lg text-sm font-medium transition-colors ${
+                    httpClient === "fetch-nocache"
+                      ? "bg-emerald-600 text-white"
+                      : "bg-zinc-100 dark:bg-zinc-800 text-zinc-700 dark:text-zinc-300 hover:bg-zinc-200 dark:hover:bg-zinc-700"
+                  }`}
+                >
+                  No Cache
+                </button>
               </div>
               <p className="text-xs text-zinc-500">
-                {httpClient === "got"
-                  ? "With network timing metrics"
-                  : "Next.js cached fetch"}
+                {httpClient === "fetch-nocache"
+                  ? "Direct fetch without cache"
+                  : "Next.js unstable_cache"}
               </p>
             </div>
 
@@ -320,7 +335,7 @@ export default function Home() {
                   Results
                 </h2>
                 <span className="px-2 py-1 rounded text-xs font-medium bg-emerald-100 text-emerald-700 dark:bg-emerald-900/30 dark:text-emerald-400">
-                  {currentHttpClient}
+                  {currentHttpClient === "fetch-nocache" ? "No Cache" : "Unstable Cache"}
                 </span>
               </div>
               {"cacheStatus" in latestSingleResult && (
@@ -383,6 +398,7 @@ export default function Home() {
             <IndividualFetchGraph
               results={latestSingleResult.results}
               mode={latestSingleResult.mode}
+              showNetworkBreakdown={hasNetworkTimings(latestSingleResult)}
             />
           </div>
         )}
@@ -395,7 +411,7 @@ export default function Home() {
                 Comparison Results
               </h2>
               <span className="px-2 py-1 rounded text-xs font-medium bg-emerald-100 text-emerald-700 dark:bg-emerald-900/30 dark:text-emerald-400">
-                {currentHttpClient}
+                {currentHttpClient === "fetch-nocache" ? "No Cache" : "Unstable Cache"}
               </span>
             </div>
 
@@ -564,6 +580,7 @@ export default function Home() {
                 <ComparisonFetchGraph
                   parallelResults={comparison.parallel.results}
                   sequentialResults={comparison.sequential.results}
+                  showNetworkBreakdown={hasNetworkTimings(comparison.parallel) && hasNetworkTimings(comparison.sequential)}
                 />
               </div>
             )}
@@ -585,7 +602,7 @@ export default function Home() {
                       Time
                     </th>
                     <th className="text-left py-3 px-2 font-medium text-zinc-600 dark:text-zinc-400">
-                      Client
+                      Strategy
                     </th>
                     <th className="text-left py-3 px-2 font-medium text-zinc-600 dark:text-zinc-400">
                       Mode
@@ -615,7 +632,7 @@ export default function Home() {
                       </td>
                       <td className="py-3 px-2">
                         <span className="px-2 py-1 rounded text-xs font-medium bg-emerald-100 text-emerald-700 dark:bg-emerald-900/30 dark:text-emerald-400">
-                          {result.httpClient}
+                          {result.httpClient === "fetch-nocache" ? "No Cache" : "Unstable Cache"}
                         </span>
                       </td>
                       <td className="py-3 px-2">
@@ -827,6 +844,9 @@ function TraceTimeline({
   showNetworkBreakdown?: boolean;
   results?: FetchResult[];
 }) {
+  const [hoveredTrace, setHoveredTrace] = useState<number | null>(null);
+  const [tooltipPosition, setTooltipPosition] = useState({ x: 0, y: 0 });
+
   const color = mode === "parallel" ? "bg-blue-500" : "bg-purple-500";
   const maxEnd = Math.max(...traces.map((t) => t.endTime));
 
@@ -834,6 +854,29 @@ function TraceTimeline({
   const markers = Array.from({ length: markerCount + 1 }, (_, i) =>
     ((maxEnd / markerCount) * i).toFixed(1)
   );
+
+  const handleMouseEnter = (
+    event: React.MouseEvent<HTMLDivElement>,
+    traceIndex: number
+  ) => {
+    const rect = event.currentTarget.getBoundingClientRect();
+    setTooltipPosition({
+      x: event.clientX,
+      y: rect.top,
+    });
+    setHoveredTrace(traceIndex);
+  };
+
+  const handleMouseMove = (event: React.MouseEvent<HTMLDivElement>) => {
+    setTooltipPosition({
+      x: event.clientX,
+      y: tooltipPosition.y,
+    });
+  };
+
+  const handleMouseLeave = () => {
+    setHoveredTrace(null);
+  };
 
   return (
     <div className="space-y-2">
@@ -883,11 +926,18 @@ function TraceTimeline({
               </span>
               <div className="flex-1 h-6 bg-zinc-100 dark:bg-zinc-800 rounded relative">
                 {showNetworkBreakdown && networkTimings ? (
-                  <NetworkTimingBar
-                    timings={networkTimings}
-                    leftPercent={leftPercent}
-                    widthPercent={widthPercent}
-                  />
+                  <div
+                    onMouseEnter={(e) => handleMouseEnter(e, trace.index)}
+                    onMouseMove={handleMouseMove}
+                    onMouseLeave={handleMouseLeave}
+                    className="cursor-pointer"
+                  >
+                    <NetworkTimingBar
+                      timings={networkTimings}
+                      leftPercent={leftPercent}
+                      widthPercent={widthPercent}
+                    />
+                  </div>
                 ) : (
                   <div
                     className={`absolute top-0.5 bottom-0.5 ${color} rounded flex items-center justify-center transition-all duration-300`}
@@ -911,6 +961,15 @@ function TraceTimeline({
           );
         })}
       </div>
+
+      {/* Tooltip */}
+      {hoveredTrace !== null && results?.[hoveredTrace] && resultHasTimings(results[hoveredTrace]) && (
+        <NetworkTimingsTooltip
+          timings={results[hoveredTrace].networkTimings!}
+          position={tooltipPosition}
+          traceName={traces[hoveredTrace].name}
+        />
+      )}
     </div>
   );
 }
@@ -953,6 +1012,65 @@ function NetworkTimingBar({
           />
         );
       })}
+    </div>
+  );
+}
+
+function NetworkTimingsTooltip({
+  timings,
+  position,
+  traceName,
+}: {
+  timings: NetworkTimings;
+  position: { x: number; y: number };
+  traceName: string;
+}) {
+  const phases = [
+    { name: "DNS Lookup", value: timings.dns, color: "bg-amber-500" },
+    { name: "TCP Connection", value: timings.tcp, color: "bg-orange-500" },
+    { name: "TLS Handshake", value: timings.tls, color: "bg-red-500" },
+    { name: "Time to First Byte", value: timings.firstByte, color: "bg-pink-500" },
+    { name: "Download", value: timings.download, color: "bg-violet-500" },
+  ];
+
+  const total = timings.total;
+
+  return (
+    <div
+      className="fixed z-50 pointer-events-none"
+      style={{
+        left: `${position.x + 15}px`,
+        top: `${position.y}px`,
+      }}
+    >
+      <div className="bg-white dark:bg-zinc-800 border border-zinc-300 dark:border-zinc-600 rounded-lg shadow-lg p-3 min-w-[220px]">
+        <div className="font-semibold text-sm text-zinc-900 dark:text-zinc-100 mb-2 border-b border-zinc-200 dark:border-zinc-700 pb-2">
+          {traceName}
+        </div>
+        <div className="space-y-1.5">
+          {phases.map((phase, i) => (
+            <div key={i} className="flex items-center justify-between gap-3">
+              <div className="flex items-center gap-2 min-w-0">
+                <div className={`w-2.5 h-2.5 rounded-sm ${phase.color} shrink-0`} />
+                <span className="text-xs text-zinc-600 dark:text-zinc-400 truncate">
+                  {phase.name}
+                </span>
+              </div>
+              <span className="text-xs font-mono font-semibold text-zinc-900 dark:text-zinc-100 whitespace-nowrap">
+                {phase.value.toFixed(2)}ms
+              </span>
+            </div>
+          ))}
+          <div className="flex items-center justify-between gap-3 pt-1.5 mt-1.5 border-t border-zinc-200 dark:border-zinc-700">
+            <span className="text-xs font-semibold text-zinc-700 dark:text-zinc-300">
+              Total
+            </span>
+            <span className="text-xs font-mono font-bold text-zinc-900 dark:text-zinc-100">
+              {total.toFixed(2)}ms
+            </span>
+          </div>
+        </div>
+      </div>
     </div>
   );
 }
@@ -1075,12 +1193,40 @@ function ComparisonTraceTimeline({
 function IndividualFetchGraph({
   results,
   mode,
+  showNetworkBreakdown,
 }: {
   results: FetchResult[];
   mode: "parallel" | "sequential";
+  showNetworkBreakdown?: boolean;
 }) {
+  const [hoveredFetch, setHoveredFetch] = useState<number | null>(null);
+  const [tooltipPosition, setTooltipPosition] = useState({ x: 0, y: 0 });
+
   const maxLatency = Math.max(...results.map((r) => r.latency));
   const color = mode === "parallel" ? "bg-blue-500" : "bg-purple-500";
+
+  const handleMouseEnter = (
+    event: React.MouseEvent<HTMLDivElement>,
+    index: number
+  ) => {
+    const rect = event.currentTarget.getBoundingClientRect();
+    setTooltipPosition({
+      x: event.clientX,
+      y: rect.top + rect.height / 2,
+    });
+    setHoveredFetch(index);
+  };
+
+  const handleMouseMove = (event: React.MouseEvent<HTMLDivElement>) => {
+    setTooltipPosition((prev) => ({
+      x: event.clientX,
+      y: prev.y,
+    }));
+  };
+
+  const handleMouseLeave = () => {
+    setHoveredFetch(null);
+  };
 
   return (
     <div className="space-y-1.5">
@@ -1092,35 +1238,91 @@ function IndividualFetchGraph({
           Max: {maxLatency.toFixed(2)}ms
         </span>
       </div>
-      {results.map((fetchResult, index) => (
-        <div key={index} className="flex items-center gap-2">
-          <span className="w-8 text-xs text-zinc-500 dark:text-zinc-400 text-right">
-            #{index + 1}
-          </span>
-          <div className="flex-1 h-5 bg-zinc-200 dark:bg-zinc-700 rounded overflow-hidden">
-            <div
-              className={`h-full ${color} transition-all duration-300 flex items-center justify-end pr-1`}
-              style={{
-                width: `${Math.max(5, (fetchResult.latency / maxLatency) * 100)}%`,
-              }}
-            >
-              {fetchResult.latency / maxLatency > 0.25 && (
-                <span className="text-[10px] font-mono text-white">
-                  {fetchResult.latency.toFixed(1)}ms
-                </span>
+      {results.map((fetchResult, index) => {
+        const networkTimings = resultHasTimings(fetchResult) ? fetchResult.networkTimings : null;
+        const showBreakdown = showNetworkBreakdown && networkTimings;
+
+        return (
+          <div key={index} className="flex items-center gap-2">
+            <span className="w-8 text-xs text-zinc-500 dark:text-zinc-400 text-right">
+              #{index + 1}
+            </span>
+            <div className="flex-1 h-5 bg-zinc-200 dark:bg-zinc-700 rounded overflow-hidden relative">
+              {showBreakdown ? (
+                <div
+                  className="absolute inset-0 cursor-pointer hover:opacity-80"
+                  onMouseEnter={(e) => handleMouseEnter(e, index)}
+                  onMouseMove={handleMouseMove}
+                  onMouseLeave={handleMouseLeave}
+                  style={{
+                    width: `${Math.max(5, (fetchResult.latency / maxLatency) * 100)}%`,
+                  }}
+                >
+                  <IndividualNetworkTimingBar timings={networkTimings!} />
+                </div>
+              ) : (
+                <div
+                  className={`h-full ${color} transition-all duration-300 flex items-center justify-end pr-1`}
+                  style={{
+                    width: `${Math.max(5, (fetchResult.latency / maxLatency) * 100)}%`,
+                  }}
+                >
+                  {fetchResult.latency / maxLatency > 0.25 && (
+                    <span className="text-[10px] font-mono text-white">
+                      {fetchResult.latency.toFixed(1)}ms
+                    </span>
+                  )}
+                </div>
               )}
             </div>
+            {fetchResult.latency / maxLatency <= 0.25 && (
+              <span className="w-16 text-xs font-mono text-zinc-600 dark:text-zinc-400">
+                {fetchResult.latency.toFixed(2)}ms
+              </span>
+            )}
+            {!fetchResult.success && (
+              <span className="text-xs text-red-500">Failed</span>
+            )}
           </div>
-          {fetchResult.latency / maxLatency <= 0.25 && (
-            <span className="w-16 text-xs font-mono text-zinc-600 dark:text-zinc-400">
-              {fetchResult.latency.toFixed(2)}ms
-            </span>
-          )}
-          {!fetchResult.success && (
-            <span className="text-xs text-red-500">Failed</span>
-          )}
-        </div>
-      ))}
+        );
+      })}
+
+      {/* Tooltip */}
+      {hoveredFetch !== null && showNetworkBreakdown && results[hoveredFetch] && resultHasTimings(results[hoveredFetch]) && (
+        <NetworkTimingsTooltip
+          timings={results[hoveredFetch].networkTimings!}
+          position={tooltipPosition}
+          traceName={`Fetch #${hoveredFetch + 1}`}
+        />
+      )}
+    </div>
+  );
+}
+
+function IndividualNetworkTimingBar({ timings }: { timings: NetworkTimings }) {
+  const phases = [
+    { value: timings.dns, color: "bg-amber-500" },
+    { value: timings.tcp, color: "bg-orange-500" },
+    { value: timings.tls, color: "bg-red-500" },
+    { value: timings.firstByte, color: "bg-pink-500" },
+    { value: timings.download, color: "bg-violet-500" },
+  ];
+
+  const total = phases.reduce((sum, p) => sum + p.value, 0);
+
+  return (
+    <div className="h-full flex">
+      {phases.map((phase, i) => {
+        const phaseWidth = total > 0 ? (phase.value / total) * 100 : 0;
+        if (phaseWidth < 0.5) return null;
+        return (
+          <div
+            key={i}
+            className={`${phase.color} h-full`}
+            style={{ width: `${phaseWidth}%` }}
+          />
+        );
+      })}
     </div>
   );
 }
@@ -1128,16 +1330,45 @@ function IndividualFetchGraph({
 function ComparisonFetchGraph({
   parallelResults,
   sequentialResults,
+  showNetworkBreakdown,
 }: {
   parallelResults: FetchResult[];
   sequentialResults: FetchResult[];
+  showNetworkBreakdown?: boolean;
 }) {
+  const [hoveredFetch, setHoveredFetch] = useState<{ index: number; mode: "parallel" | "sequential" } | null>(null);
+  const [tooltipPosition, setTooltipPosition] = useState({ x: 0, y: 0 });
+
   const maxLatency = Math.max(
     ...parallelResults.map((r) => r.latency),
     ...sequentialResults.map((r) => r.latency)
   );
 
   const fetchCount = Math.max(parallelResults.length, sequentialResults.length);
+
+  const handleMouseEnter = (
+    event: React.MouseEvent<HTMLDivElement>,
+    index: number,
+    mode: "parallel" | "sequential"
+  ) => {
+    const rect = event.currentTarget.getBoundingClientRect();
+    setTooltipPosition({
+      x: event.clientX,
+      y: rect.top + rect.height / 2,
+    });
+    setHoveredFetch({ index, mode });
+  };
+
+  const handleMouseMove = (event: React.MouseEvent<HTMLDivElement>) => {
+    setTooltipPosition((prev) => ({
+      x: event.clientX,
+      y: prev.y,
+    }));
+  };
+
+  const handleMouseLeave = () => {
+    setHoveredFetch(null);
+  };
 
   return (
     <div className="space-y-2">
@@ -1164,6 +1395,8 @@ function ComparisonFetchGraph({
       {Array.from({ length: fetchCount }).map((_, index) => {
         const parallelFetch = parallelResults[index];
         const sequentialFetch = sequentialResults[index];
+        const parallelTimings = parallelFetch && resultHasTimings(parallelFetch) ? parallelFetch.networkTimings : null;
+        const sequentialTimings = sequentialFetch && resultHasTimings(sequentialFetch) ? sequentialFetch.networkTimings : null;
 
         return (
           <div key={index} className="flex items-center gap-2">
@@ -1172,25 +1405,43 @@ function ComparisonFetchGraph({
             </span>
             <div className="flex-1 space-y-0.5">
               {/* Parallel bar */}
-              <div className="h-3 bg-zinc-200 dark:bg-zinc-700 rounded overflow-hidden">
+              <div className="h-3 bg-zinc-200 dark:bg-zinc-700 rounded overflow-hidden relative">
                 {parallelFetch && (
                   <div
-                    className="h-full bg-blue-500 transition-all duration-300"
+                    className="absolute inset-0 cursor-pointer hover:opacity-80"
                     style={{
                       width: `${Math.max(2, (parallelFetch.latency / maxLatency) * 100)}%`,
                     }}
-                  />
+                    onMouseEnter={(e) => handleMouseEnter(e, index, "parallel")}
+                    onMouseMove={handleMouseMove}
+                    onMouseLeave={handleMouseLeave}
+                  >
+                    {showNetworkBreakdown && parallelTimings ? (
+                      <ComparisonNetworkTimingBar timings={parallelTimings} />
+                    ) : (
+                      <div className="h-full bg-blue-500" />
+                    )}
+                  </div>
                 )}
               </div>
               {/* Sequential bar */}
-              <div className="h-3 bg-zinc-200 dark:bg-zinc-700 rounded overflow-hidden">
+              <div className="h-3 bg-zinc-200 dark:bg-zinc-700 rounded overflow-hidden relative">
                 {sequentialFetch && (
                   <div
-                    className="h-full bg-purple-500 transition-all duration-300"
+                    className="absolute inset-0 cursor-pointer hover:opacity-80"
                     style={{
                       width: `${Math.max(2, (sequentialFetch.latency / maxLatency) * 100)}%`,
                     }}
-                  />
+                    onMouseEnter={(e) => handleMouseEnter(e, index, "sequential")}
+                    onMouseMove={handleMouseMove}
+                    onMouseLeave={handleMouseLeave}
+                  >
+                    {showNetworkBreakdown && sequentialTimings ? (
+                      <ComparisonNetworkTimingBar timings={sequentialTimings} />
+                    ) : (
+                      <div className="h-full bg-purple-500" />
+                    )}
+                  </div>
                 )}
               </div>
             </div>
@@ -1205,6 +1456,58 @@ function ComparisonFetchGraph({
               </div>
             </div>
           </div>
+        );
+      })}
+
+      {/* Tooltip */}
+      {hoveredFetch !== null && showNetworkBreakdown && (
+        <>
+          {hoveredFetch.mode === "parallel" &&
+            parallelResults[hoveredFetch.index] &&
+            resultHasTimings(parallelResults[hoveredFetch.index]) && (
+            <NetworkTimingsTooltip
+              timings={parallelResults[hoveredFetch.index].networkTimings!}
+              position={tooltipPosition}
+              traceName={`Parallel Fetch #${hoveredFetch.index + 1}`}
+            />
+          )}
+          {hoveredFetch.mode === "sequential" &&
+            sequentialResults[hoveredFetch.index] &&
+            resultHasTimings(sequentialResults[hoveredFetch.index]) && (
+            <NetworkTimingsTooltip
+              timings={sequentialResults[hoveredFetch.index].networkTimings!}
+              position={tooltipPosition}
+              traceName={`Sequential Fetch #${hoveredFetch.index + 1}`}
+            />
+          )}
+        </>
+      )}
+    </div>
+  );
+}
+
+function ComparisonNetworkTimingBar({ timings }: { timings: NetworkTimings }) {
+  const phases = [
+    { value: timings.dns, color: "bg-amber-500" },
+    { value: timings.tcp, color: "bg-orange-500" },
+    { value: timings.tls, color: "bg-red-500" },
+    { value: timings.firstByte, color: "bg-pink-500" },
+    { value: timings.download, color: "bg-violet-500" },
+  ];
+
+  const total = phases.reduce((sum, p) => sum + p.value, 0);
+
+  return (
+    <div className="h-full flex">
+      {phases.map((phase, i) => {
+        const phaseWidth = total > 0 ? (phase.value / total) * 100 : 0;
+        if (phaseWidth < 0.5) return null;
+        return (
+          <div
+            key={i}
+            className={`${phase.color} h-full`}
+            style={{ width: `${phaseWidth}%` }}
+          />
         );
       })}
     </div>
