@@ -963,13 +963,16 @@ function TraceTimeline({
       </div>
 
       {/* Tooltip */}
-      {hoveredTrace !== null && results?.[hoveredTrace] && resultHasTimings(results[hoveredTrace]) && (
-        <NetworkTimingsTooltip
-          timings={results[hoveredTrace].networkTimings!}
-          position={tooltipPosition}
-          traceName={traces[hoveredTrace].name}
-        />
-      )}
+      {hoveredTrace !== null && (() => {
+        const result = results?.[hoveredTrace];
+        return result && resultHasTimings(result) && (
+          <NetworkTimingsTooltip
+            timings={result.networkTimings}
+            position={tooltipPosition}
+            traceName={traces[hoveredTrace].name}
+          />
+        );
+      })()}
     </div>
   );
 }
@@ -1288,13 +1291,16 @@ function IndividualFetchGraph({
       })}
 
       {/* Tooltip */}
-      {hoveredFetch !== null && showNetworkBreakdown && results[hoveredFetch] && resultHasTimings(results[hoveredFetch]) && (
-        <NetworkTimingsTooltip
-          timings={results[hoveredFetch].networkTimings!}
-          position={tooltipPosition}
-          traceName={`Fetch #${hoveredFetch + 1}`}
-        />
-      )}
+      {hoveredFetch !== null && showNetworkBreakdown && (() => {
+        const result = results[hoveredFetch];
+        return result && resultHasTimings(result) && (
+          <NetworkTimingsTooltip
+            timings={result.networkTimings}
+            position={tooltipPosition}
+            traceName={`Fetch #${hoveredFetch + 1}`}
+          />
+        );
+      })()}
     </div>
   );
 }
@@ -1369,6 +1375,16 @@ function ComparisonFetchGraph({
   const handleMouseLeave = () => {
     setHoveredFetch(null);
   };
+
+  const hoveredParallelResult =
+    hoveredFetch?.mode === "parallel"
+      ? parallelResults[hoveredFetch.index]
+      : null;
+
+  const hoveredSequentialResult =
+    hoveredFetch?.mode === "sequential"
+      ? sequentialResults[hoveredFetch.index]
+      : null;
 
   return (
     <div className="space-y-2">
@@ -1462,20 +1478,18 @@ function ComparisonFetchGraph({
       {/* Tooltip */}
       {hoveredFetch !== null && showNetworkBreakdown && (
         <>
-          {hoveredFetch.mode === "parallel" &&
-            parallelResults[hoveredFetch.index] &&
-            resultHasTimings(parallelResults[hoveredFetch.index]) && (
+          {hoveredParallelResult &&
+            resultHasTimings(hoveredParallelResult) && (
             <NetworkTimingsTooltip
-              timings={parallelResults[hoveredFetch.index].networkTimings!}
+              timings={hoveredParallelResult.networkTimings}
               position={tooltipPosition}
               traceName={`Parallel Fetch #${hoveredFetch.index + 1}`}
             />
           )}
-          {hoveredFetch.mode === "sequential" &&
-            sequentialResults[hoveredFetch.index] &&
-            resultHasTimings(sequentialResults[hoveredFetch.index]) && (
+          {hoveredSequentialResult &&
+            resultHasTimings(hoveredSequentialResult) && (
             <NetworkTimingsTooltip
-              timings={sequentialResults[hoveredFetch.index].networkTimings!}
+              timings={hoveredSequentialResult.networkTimings}
               position={tooltipPosition}
               traceName={`Sequential Fetch #${hoveredFetch.index + 1}`}
             />
