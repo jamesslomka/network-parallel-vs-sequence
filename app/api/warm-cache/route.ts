@@ -1,11 +1,15 @@
 import { NextResponse } from "next/server";
-import { getCachedWines } from "@/app/lib/cache";
+import { getCachedWines, markCacheWarmed } from "@/app/lib/cache";
 
 export async function POST() {
   try {
     const start = performance.now();
     const result = await getCachedWines();
     const latency = performance.now() - start;
+
+    // Note: the warmed timestamp mirrors the cached fetch time so other routes
+    // can infer the cache is likely hot without timing heuristics alone.
+    markCacheWarmed(result.fetchedAt);
 
     return NextResponse.json({
       success: true,

@@ -29,9 +29,26 @@ export interface FetchWithTimingsResult {
   timings: NetworkTimings;
 }
 
+// Track when we last successfully primed the cache (module-scoped, per runtime)
+let cacheWarmedAt = 0;
+
+export function markCacheWarmed(timestamp: number) {
+  cacheWarmedAt = timestamp;
+}
+
+export function getCacheWarmedAt() {
+  return cacheWarmedAt;
+}
+
+// Track cache execution to detect hits vs misses
+let lastFetchExecutionId = 0;
+
 // Cached version of the wines API fetch with a long TTL (1 hour)
 export const getCachedWines = unstable_cache(
-  async (): Promise<{ data: Wine[]; fetchedAt: number }> => {
+  async (): Promise<{ data: Wine[]; fetchedAt: number; executionId: number }> => {
+    // Increment execution ID - this only happens when the function actually executes (cache miss)
+    const executionId = ++lastFetchExecutionId;
+
     const response = await fetch(WINES_API_URL);
     if (!response.ok) {
       throw new Error(`Failed to fetch wines: ${response.status}`);
@@ -40,6 +57,7 @@ export const getCachedWines = unstable_cache(
     return {
       data,
       fetchedAt: Date.now(),
+      executionId,
     };
   },
   ["wines-cache"],

@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
-import { getCachedWines } from "@/app/lib/cache";
+import { getCachedWines, getCacheWarmedAt } from "@/app/lib/cache";
 
 export interface TraceSpan {
   name: string;
@@ -15,6 +15,7 @@ export interface FetchResult {
   index: number;
   latency: number;
   cachedAt: number;
+  executionId?: number;
   success: boolean;
   error?: string;
 }
@@ -45,6 +46,7 @@ async function performSingleFetch(
         index,
         latency: duration,
         cachedAt: fetchResult.fetchedAt,
+        executionId: fetchResult.executionId,
         success: true,
       },
       trace: {
@@ -135,25 +137,48 @@ export async function POST(request: NextRequest) {
           successfulResults.length
         : 0;
 
-    // Determine cache status based on first fetch latency
+    // Determine cache status using executionId
+    // executionId only increments when the cached function actually executes (cache miss)
+    // If all fetches have the same executionId, they all used the same cached result
     const firstFetchLatency = results[0]?.latency || 0;
-    const subsequentAvg =
-      results.length > 1
-        ? results.slice(1).reduce((sum, r) => sum + r.latency, 0) /
-          (results.length - 1)
-        : firstFetchLatency;
+    const warmedAt = getCacheWarmedAt();
+    const successfulFetches = results.filter((r) => r.success);
 
     let cacheStatus: "hot" | "cold" | "unknown" = "unknown";
-    if (results.length > 1) {
-      if (firstFetchLatency > subsequentAvg * 3 || firstFetchLatency > 100) {
+
+    if (successfulFetches.length > 0) {
+      // Get unique executionIds
+      const uniqueExecutionIds = new Set(
+        successfulFetches
+          .map((r) => r.executionId)
+          .filter((id): id is number => id !== undefined)
+      );
+
+      if (uniqueExecutionIds.size === 1) {
+        // All fetches returned the same cached execution
+        // Now determine if cache was hot or if this request populated it
+
+        // Check if cache was pre-warmed
+        if (warmedAt > 0 && Date.now() - warmedAt < 55 * 60 * 1000) {
+          // Cache was warmed within TTL window - definitely hot
+          cacheStatus = "hot";
+        } else {
+          // No pre-warm marker, use latency heuristic
+          // If first fetch was fast (<50ms), cache was already populated (hot)
+          // If slow (>80ms), this request populated the cache (cold)
+          if (firstFetchLatency < 50) {
+            cacheStatus = "hot";
+          } else if (firstFetchLatency > 80) {
+            cacheStatus = "cold";
+          } else {
+            cacheStatus = "unknown";
+          }
+        }
+      } else if (uniqueExecutionIds.size > 1) {
+        // Different executionIds mean multiple cache misses occurred
+        // This shouldn't happen with unstable_cache, indicates cache isn't working
         cacheStatus = "cold";
-      } else {
-        cacheStatus = "hot";
       }
-    } else if (firstFetchLatency > 100) {
-      cacheStatus = "cold";
-    } else {
-      cacheStatus = "hot";
     }
 
     const response: FetchWinesResponse = {
