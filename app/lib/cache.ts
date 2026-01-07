@@ -30,24 +30,25 @@ export interface FetchWithTimingsResult {
 }
 
 // Cached version of the wines API fetch with a long TTL (1 hour)
-export const getCachedWines = unstable_cache(
-  async (): Promise<{ data: Wine[]; fetchedAt: number }> => {
-    const response = await fetch(WINES_API_URL);
-    if (!response.ok) {
-      throw new Error(`Failed to fetch wines: ${response.status}`);
+export const getCachedWines = (index: number) =>
+  unstable_cache(
+    async (): Promise<{ data: Wine[]; fetchedAt: number }> => {
+      const response = await fetch(WINES_API_URL);
+      if (!response.ok) {
+        throw new Error(`Failed to fetch wines: ${response.status}`);
+      }
+      const data = await response.json();
+      return {
+        data,
+        fetchedAt: Date.now(),
+      };
+    },
+    [`wines-cache-${index}`],
+    {
+      revalidate: 3600, // 1 hour TTL
+      tags: ["wines"],
     }
-    const data = await response.json();
-    return {
-      data,
-      fetchedAt: Date.now(),
-    };
-  },
-  ["wines-cache"],
-  {
-    revalidate: 3600, // 1 hour TTL
-    tags: ["wines"],
-  }
-);
+  )();
 
 // Direct fetch without cache (for comparison)
 export async function getUncachedWines(): Promise<{
