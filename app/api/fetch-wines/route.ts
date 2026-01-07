@@ -36,7 +36,7 @@ async function performSingleFetch(
 ): Promise<{ result: FetchResult; trace: TraceSpan }> {
   const startTime = performance.now() - requestStart;
   try {
-    const fetchResult = await getCachedWines();
+    const fetchResult = await getCachedWines(index + 1);
     const endTime = performance.now() - requestStart;
     const duration = endTime - startTime;
 
@@ -59,7 +59,8 @@ async function performSingleFetch(
   } catch (error) {
     const endTime = performance.now() - requestStart;
     const duration = endTime - startTime;
-    const errorMessage = error instanceof Error ? error.message : "Unknown error";
+    const errorMessage =
+      error instanceof Error ? error.message : "Unknown error";
 
     return {
       result: {
